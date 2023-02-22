@@ -1,9 +1,12 @@
-# Created by https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks
-# Edit at https://www.toptal.com/developers/gitignore?templates=python,jupyternotebooks
+# Created by https://www.toptal.com/developers/gitignore/api/visualstudiocode,python,jupyternotebooks
+# Edit at https://www.toptal.com/developers/gitignore?templates=visualstudiocode,python,jupyternotebooks
 
 ### JupyterNotebooks ###
 # gitignore template for Jupyter Notebooks
 # website: http://jupyter.org/
+
+# batch
+*.bat
 
 .ipynb_checkpoints
 */.ipynb_checkpoints/*
@@ -181,7 +184,23 @@ poetry.toml
 # ruff
 .ruff_cache/
 
-# batch
-*.bat
+### VisualStudioCode ###
+.vscode/*
+# !.vscode/settings.json
+# !.vscode/tasks.json
+# !.vscode/launch.json
+# !.vscode/extensions.json
+# !.vscode/*.code-snippets
 
-# End of https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks
+# Local History for Visual Studio Code
+.history/
+
+# Built Visual Studio Code Extensions
+*.vsix
+
+### VisualStudioCode Patch ###
+# Ignore all local history of files
+.history
+.ionide
+
+# End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,python,jupyternotebooks

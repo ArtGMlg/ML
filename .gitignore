@@ -5,6 +5,12 @@
 # gitignore template for Jupyter Notebooks
 # website: http://jupyter.org/
 
+#myfiles
+*.docx
+*.json
+*jsonc
+*.zip
+
 # batch
 *.bat
 

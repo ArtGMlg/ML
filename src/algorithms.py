@@ -2,6 +2,8 @@ import numpy as np
 import math
 import pandas as pd
 from scipy.stats import norm
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler
 
 
 class LRwR:
@@ -77,5 +79,137 @@ class NaiveBayes:
         return np.array(y_pred)
     
 
-class CART:
+class ClassificationTree:
+    def __init__(self, max_depth: int = 3) -> None:
+        self.stop = max_depth
+        
+    def __gini(self, y:pd.Series):
+        co = y.value_counts().sort_index()
+        alc = sum(y.value_counts().values)
+        return sum([i/alc * (1 - i/alc) for i in co.values])
     
+    def __whatClass(self, y: pd.Series):
+        return y.value_counts().sort_index().apply(lambda x: x/sum(y.value_counts().values)).sort_values().last_valid_index()
+        
+    def fit(self, X_t:pd.DataFrame, y_t:pd.Series) -> list:
+        bool_cols = [col for col in X_t 
+                    if np.isin(X_t[col].dropna().unique(), [0, 1]).all()]
+        self.scaler = StandardScaler()
+        for name in bool_cols:
+            X_t[name] = self.scaler.fit_transform(X_t[name].values.reshape(-1, 1), y_t)
+            
+        dataset = pd.concat([X_t, y_t], axis=1)
+        storage = [[dataset]]
+        tree = []
+        rules = []
+        self.r = []
+        
+        depth = 1
+        
+        while True:
+            temp_storage = []
+            rule_store = []
+            temp_rule = []
+            for leaf in storage[depth-1]:
+                better_split = []
+                if leaf.shape[1] == 0: 
+                    rule_store.append('')
+                    temp_rule.append(None, None)
+                    continue
+                for i in range(leaf.shape[1]-1):
+                    gini_for_col = [self.__gini(leaf.iloc[:,leaf.shape[1]-1]), self.__gini(leaf.iloc[:,leaf.shape[1]-1]), 0]
+                    # print(gini_for_col)
+                    sortedFrame = leaf.sort_values(leaf.iloc[:,i].name)
+                    for j in range(sortedFrame.iloc[:,i].shape[0]):
+                        gini_l = self.__gini(sortedFrame[0:j].iloc[:,sortedFrame.shape[1]-1])
+                        gini_r = self.__gini(sortedFrame[j:sortedFrame.shape[0]-1].iloc[:,sortedFrame.shape[1]-1])
+                        # print([gini_l, gini_r])
+                        if [gini_l, gini_r] < gini_for_col[0:2] and gini_l != 0 and gini_r !=0:
+                            gini_for_col = [gini_l, gini_r, j]
+                    
+                    gini_for_col.append(leaf.iloc[:,i].name)        
+                    better_split.append(gini_for_col)
+                
+                better_split.sort(key=lambda x: (x[0], x[1]))
+                
+                best_split = better_split[0]
+                
+                if leaf.sort_values(best_split[3])[best_split[3]].size == 0:
+                    rule_store.append('')
+                    temp_rule.append([None, None])
+                    continue
+                
+                rule_store.append(f"If {best_split[3]} <= {leaf.sort_values(best_split[3])[best_split[3]].values[best_split[2]]}. gini = {self.__gini(leaf.iloc[:,leaf.shape[1]-1])}")
+                temp_rule.append([best_split[3], 
+                                  leaf.sort_values(best_split[3])[best_split[3]].values[best_split[2]],
+                                  self.__whatClass(leaf.iloc[:,leaf.shape[1]-1])
+                                ])
+                
+                temp_storage.append(leaf.sort_values(best_split[3])[:best_split[2]])
+                temp_storage.append(leaf.sort_values(best_split[3])[best_split[2]:])
+                
+            storage.append(temp_storage)
+            rules.append(rule_store)
+            self.r.append(temp_rule)
+            
+            depth += 1
+            
+            if depth >= self.stop:
+                classes = []
+                for res in temp_storage:
+                    classes.append(('leaf', self.__whatClass(res.iloc[:,res.shape[1]-1])) if res.size != 0 else '')
+                self.r.append(classes)
+                break
+        
+        return rules
+                
+    def predict(self, X:pd.DataFrame):
+        bool_cols = [col for col in X 
+                    if np.isin(X[col].dropna().unique(), [0, 1]).all()]
+        for name in bool_cols:
+            X[name] = self.scaler.transform(X[name].values.reshape(-1, 1))
+        
+        storage = [[X]]
+        
+        for index, layer in enumerate(self.r):
+            if index + 1 != self.stop:
+                temp_st = []
+                frames = storage[index]
+                for ind, rule in enumerate(layer):
+                    sortedFrame = frames[ind].sort_values(rule[0])
+                    target = sortedFrame[rule[0]]
+                    res_tar = target.reset_index()
+                    lastSplitterInd = res_tar.where(res_tar == rule[1]).last_valid_index()
+                    if lastSplitterInd == None:
+                        lastSplitterInd = res_tar.where(res_tar <= rule[1]).last_valid_index()
+                    if lastSplitterInd == None:
+                        lastSplitterInd = res_tar.where(res_tar >= rule[1]).last_valid_index()
+                    print(sortedFrame[:lastSplitterInd].shape, sortedFrame[lastSplitterInd:].shape, lastSplitterInd, index)
+                    temp_st.append(sortedFrame[:lastSplitterInd])
+                    temp_st.append(sortedFrame[lastSplitterInd:])
+                    
+                storage.append(temp_st)
+            else:
+                frames = storage[index]
+                for ind, probableClass in enumerate(layer):
+                    if 'leaf' in probableClass:
+                        print(frames[ind].shape)
+                        frames[ind]['cl'] = [probableClass[1]] * frames[ind].shape[0]
+                    else:
+                        if ind + 1 % 2 == 0:
+                            previousRule = self.r[index - 1][int((ind + 1)/2 - 1)]
+                            frames[ind]['cl'] = [previousRule[1]] * frames[ind].shape[0]
+                        else:
+                            previousRule = self.r[index - 1][int((ind + 2)/2 - 1)]
+                            frames[ind]['cl'] = [previousRule[2]] * frames[ind].shape[0]
+                            
+                print([i.shape for i in frames])
+                merged = pd.concat([i for i in frames])
+                    
+                res = merged.sort_index()
+                return res['cl'].values
+
+            
+        
+            
+        

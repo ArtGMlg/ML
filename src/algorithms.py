@@ -2,8 +2,11 @@ import numpy as np
 import math
 import pandas as pd
 from scipy.stats import norm
+from scipy.special import expit
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
+import numdifftools as nd
+import sys
 
 
 class LRwR:
@@ -209,7 +212,141 @@ class ClassificationTree:
                 res = merged.sort_index()
                 return res['cl'].values
 
-            
+
+class NeuroLayer:
+    def sigmoid(self, x: np.ndarray) -> np.ndarray:
+        return 1/(1+np.exp(-1 * x))
+    
+    def tanh(self, x: np.ndarray) -> np.ndarray:
+        return np.tanh(x)
+    
+    def relu(self, x: np.ndarray) -> np.ndarray:
+        return np.maximum(x, 0)
+    
+    def linear(self, x: np.ndarray) -> np.ndarray:
+        return x
+    
+    def forward(self, x: np.ndarray) -> np.ndarray:
+        self.x = x
+        temp = np.dot(self.connectedToPrevious, self.x) + self.b
+        self.a = self.af(temp)
+        self.ga = nd.Derivative(self.af)(temp)
+        return self.a
+    
+    def fast_forward(self, x: np.ndarray) -> np.ndarray:
+        return self.af(np.dot(self.connectedToPrevious, x) + self.b)
+    
+    def backward(self, gr: np.ndarray, m, lr) -> np.ndarray:
+        buf = np.multiply(self.ga.T, np.dot(gr, m))
+        # buf = np.dot(np.multiply(self.ga.T, gr), m)
+        self.b -= lr * buf.T
+        self.connectedToPrevious -= lr*np.dot(self.x, buf).T
+        return buf
+    
+    def __init__(self, numOfNeurons: int, activation: str) -> None:
+        allowedActivation = ['sigmoid', 'tanh', 'relu', 'linear']
+        self.n = numOfNeurons
+        self.connectedToPrevious = np.array([])
+        if activation in allowedActivation:
+            if activation == 'sigmoid':
+                self.af = self.sigmoid
+            elif activation == 'tanh':
+                self.af = self.tanh
+            elif activation == 'relu':
+                self.af = self.relu
+            elif activation == 'linear':
+                self.af = self.linear
+        else:
+            raise ValueError(f'Unexpected activation function. Supported functions are: {allowedActivation}')
         
-            
+ 
+class NeuroNet:
+    def __init__(self, sequence: list, input_shape: tuple) -> None:
+        if not input_shape:
+            raise ValueError("You must specify the input shape.")
+        self.layers = sequence
+        buf = np.random.normal(0, 1, (self.layers[0].n, input_shape[0]))
+        self.matrices = [buf]
+        self.layers[0].connectedToPrevious = buf
+        self.layers[0].b = np.random.normal(0, 1, (self.layers[0].n, 1))
         
+    def __MSE(self, yp, yr):
+        return np.mean((yr-yp)**2)
+    
+    def __MAE(self, y_r, y_p):
+        return np.mean(abs(y_r-y_p))
+    
+    def __MAPE(self, y_r, y_p):
+        return np.mean(abs(y_r-y_p)/y_r)
+        
+    def compile(self, loss: str) -> None:
+        """
+        Случайным образом создаем матрицы весов для перехода от одного слоя к другому
+        """
+        for i in range(len(self.layers) - 1):
+            buf = np.random.normal(0, 1, (self.layers[i+1].n, self.layers[i].n))
+            self.matrices.append(buf)
+            self.layers[i+1].connectedToPrevious = buf
+            self.layers[i+1].b = np.random.normal(0, 1, (self.layers[i+1].n, 1))
+            
+    def __max_batches(self, n: int) -> int:
+        i = n // 2
+        m = 20 if n < 100 else 250
+        while i > m:
+            if n % i == 0:
+                return i
+            i -= 1
+        return i
+            
+    def fit(self, X:pd.DataFrame, y:pd.Series, e:int, rate: float = 0.01) -> np.ndarray:
+        X = X.to_numpy()
+        for i in range(e):
+            print(f"Initializing epoch {i+1} of {e}")
+            
+            nbatches = self.__max_batches(len(X))
+            
+            batchSize = len(X) // nbatches
+            
+            start = 0
+            
+            totalp = []
+            
+            for i in range(batchSize, nbatches, batchSize):
+                batch = X[start:i]
+                
+                for ind, ob in enumerate(batch):
+                    ob = ob[np.newaxis, :].T
+                    for layer in self.layers:
+                        ob = layer.forward(ob)
+                    
+                    pred = ob
+                    totalp.append(pred.flatten()[0])
+                    
+                    gr = nd.Gradient(self.__MSE)(pred, y.values[start:i][ind])
+                    
+                    m = 1
+                    
+                    for layer in self.layers[::-1]:
+                        gr = layer.backward(gr, m, rate)
+                        m = layer.connectedToPrevious
+                        
+                print(f"{i}/{nbatches}\t\tLoss: {self.__MSE(totalp, y.values[0:i])}", end='\r')
+                
+                start += batchSize
+                
+            print(f"{nbatches}/{nbatches}\t\tLoss: {self.__MSE(totalp, y.values[0:i])}", end='\n')
+            
+        self.matrices = [layer.connectedToPrevious for layer in self.layers]
+                
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        
+        X = X.to_numpy()
+        pred = []
+        for ind, ob in enumerate(X):
+            print(f"{ind}/{X.shape[0]}", end='\r')
+            ob = ob[np.newaxis, :].T
+            for layer in self.layers:
+                ob = layer.fast_forward(ob)
+            pred.append(ob.flatten()[0])
+            
+        return np.array(pred)

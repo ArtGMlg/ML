@@ -6,7 +6,7 @@ from scipy.special import expit
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
 import numdifftools as nd
-import sys
+import cv2
 
 
 class LRwR:
@@ -212,6 +212,60 @@ class ClassificationTree:
                 res = merged.sort_index()
                 return res['cl'].values
 
+class ConvNeuroLayer:
+    def __init__(self, n_filters: int, filter_size: int, window_size: tuple, stride: int, shape: tuple) -> None:
+        self.nf = n_filters
+        self.fs = filter_size
+        self.ws = window_size
+        self.stride = stride
+        
+        self.kernels = np.zeros((self.nf, self.fs, self.fs))
+
+        for i in range(self.nf):
+            self.kernels[i] = np.random.randn(self.fs, self.fs)
+            self.kernels[i] /= sum(self.kernels[i])
+            
+        self.b = np.zeros((shape[0], shape[1]))
+        
+    def __averagepooling(self, image, kernel_size, stride):
+        # Размеры изображения
+        input_dim_x, input_dim_y = image.shape
+        
+        # Размеры окна
+        kernel_dim_x, kernel_dim_y = kernel_size
+        
+        # Вычисляем размерность выходного изображения
+        output_dim_x = int((input_dim_x - kernel_dim_x) / stride + 1)
+        output_dim_y = int((input_dim_y - kernel_dim_y) / stride + 1)
+        
+        # Создаем выходной массив
+        output = np.zeros((output_dim_x, output_dim_y))
+        
+        # Применяем операцию пулинга к изображению
+        for i in range(output_dim_x):
+            for j in range(output_dim_y):
+                output[i, j] = np.mean(
+                    image[i * stride : i * stride + kernel_dim_x, j * stride : j * stride + kernel_dim_y]
+                )
+        
+        return output
+        
+    def forward(self, im: np.ndarray) -> np.ndarray:
+        filterred = np.zeros((self.nf, im.shape[0], im.shape[1]))
+        
+        for num, kernel in enumerate(self.kernels):
+            filterred[num] = np.sum(cv2.filter2D(im, -1, kernel), axis=2)
+            
+        filterred += self.b
+        
+        buf = []
+        
+        for im in filterred:
+            buf.append(self.__averagepooling(im, self.ws, self.stride))
+            
+        pooled = np.array(buf)
+        
+        return pooled
 
 class NeuroLayer:
     def sigmoid(self, x: np.ndarray) -> np.ndarray:
@@ -225,6 +279,10 @@ class NeuroLayer:
     
     def linear(self, x: np.ndarray) -> np.ndarray:
         return x
+
+    def softmax(self, x: np.ndarray) -> np.ndarray:
+        exp_x = np.exp(x)
+        return exp_x / np.sum(exp_x)
     
     def forward(self, x: np.ndarray) -> np.ndarray:
         self.x = x
@@ -350,3 +408,41 @@ class NeuroNet:
             pred.append(ob.flatten()[0])
             
         return np.array(pred)
+
+
+class kmeans:
+    def __init__(self, n_clusters: int) -> None:
+        self.n = n_clusters
+        self.clusters = [[] for _ in range(n_clusters)]
+        self.centroids = []
+        
+    def __range(self, center, x):
+        return np.sqrt(np.sum((center - x)**2))
+    
+    def __rand_centroids(self, X):
+        centroids = np.zeros((self.n, X.shape[1]))
+        for i in range(self.n):
+            centroids[i] = X[np.random.choice(range(X.shape[0]))]
+        self.centroids = centroids
+    
+    def fit(self, X: np.ndarray) -> None:
+        self.__rand_centroids(X)
+        while True:
+            for i, sample in enumerate(X):
+                dist = [self.__range(centroid, sample) for centroid in self.centroids]
+                self.clusters[np.argmin(dist)].append(i)
+            tmp = self.centroids.copy()
+            for i, cluster in enumerate(self.clusters):
+                self.centroids[i] = np.mean(X[cluster], axis=0)
+            if not (self.centroids - tmp).any() < 1e-8:
+                self.labels_ = self.predict(X)
+                return
+            self.labels_ = self.predict(X)
+        
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        pred = []
+        for i, sample in enumerate(X):
+            dist = [self.__range(centroid, sample) for centroid in self.centroids]
+            pred.append(np.argmin(dist))
+        return np.array(pred)
+        

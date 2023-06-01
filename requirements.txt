@@ -1,6 +1,10 @@
 notebook
+scipy
 scikit-learn
 pandas
 matplotlib
 seaborn
 tensorflow
+importlib
+streamlit
+fs

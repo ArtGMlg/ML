@@ -213,3 +213,7 @@ poetry.toml
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,python,jupyternotebooks
+notebooks/Horosh (1).ipynb
+notebooks/mynb.ipynb
+notebooks/test.ipynb
+src/parser.py

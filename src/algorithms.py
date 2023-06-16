@@ -7,6 +7,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
 import numdifftools as nd
 import cv2
+from collections import Counter
 
 
 class LRwR:
@@ -18,7 +19,7 @@ class LRwR:
 
     def fit(self, X, y, k=0.00000001, alpha=0.5):
         self.y = y
-        self.MyX = np.concatenate((np.ones((X.values.shape[0], 1), dtype=np.int64), X.values), axis=1)
+        self.MyX = np.concatenate((np.ones((X.values.shape[0], 1), dtype=np.float64), X.to_numpy().astype(np.float64)), axis=1)
         self.w = np.array([0 for i in range(len(self.MyX[0]))], dtype=np.float64)
         for i in range(len(self.w)):
             self.w -= (k/len(self.w))*self.grQ(self.w, i, alpha)
@@ -29,17 +30,28 @@ class LRwR:
 
 class kNN:
     def __init__(self, X, y, k=2):
-        self.X_train = X.values
-        self.y_train = y.values
+        if type(X) == pd.DataFrame:
+            self.X_train = X.values
+        else:
+            self.X_train = X
+        
+        if type(y) == pd.Series:
+            self.y_train = y.values
+        else:
+            self.y_train = y
+            
         self.k = k
-        self.nc = len(np.unique(y.values))
-        self.classes = list(np.unique(y.values).flatten())
+        self.nc = len(np.unique(self.y_train))
+        self.classes = list(np.unique(self.y_train).flatten())
 
     def __dist(self, p, q):
         return math.sqrt(np.sum((p-q)**2))
 
     def predict(self, Xt) -> np.ndarray:
-        self.Xt = Xt.values
+        if type(Xt) == pd.DataFrame:
+            self.Xt = Xt.values
+        else:
+            self.Xt = Xt
         prediction = []
         counter = 0
         for item in self.Xt:
@@ -446,3 +458,74 @@ class kmeans:
             pred.append(np.argmin(dist))
         return np.array(pred)
         
+
+class PCA:
+    def __init__(self, n: int) -> None:
+        self.n = n
+    
+    def fit_transform(self, X: pd.DataFrame, y: np.ndarray = np.array([])) -> None:
+        # X = X.to_numpy().astype(np.float64)
+        self.Xm = X - np.mean(X, axis = 0) / np.std(X, axis=0)
+        # self.Xm = StandardScaler().fit_transform(X)
+        self.cov = np.cov(self.Xm, rowvar=False)
+        self.eva, self.eve = np.linalg.eigh(self.cov)
+        
+        eve_set = self.eve[:,np.argsort(self.eva)[::-1]][:,0:self.n]
+        
+        return np.dot(eve_set.transpose(), self.Xm.transpose()).transpose()
+
+class BagOfWords:
+    def __init__(self) -> None:
+        pass
+    
+    def fit_transform(self, texts: np.ndarray) -> np.ndarray:
+        unique_words = sorted(list(set(word for doc in texts for word in doc.split())))
+        bag = []
+        
+        for doc in texts:
+            v = np.zeros_like(unique_words, dtype=np.int32)
+            for word in doc.split():
+                v[unique_words.index(word)] += 1
+            bag.append(v)
+            
+        return np.array(bag)
+
+
+class tfidf:
+    def __init__(self) -> None:
+        pass
+    
+    def __compute_tf(self, text):
+        tf_text = Counter(text.split())
+        for word in tf_text:
+            tf_text[word] = tf_text[word]/float(len(text.split()))
+        return tf_text
+
+    def __compute_idf(self, documents):
+        N = len(documents)
+        all_words = set()
+        for document in documents:
+            all_words.update(document.keys())
+        idf = dict.fromkeys(all_words, 0)
+        for document in documents:
+            for word in document:
+                if document[word] > 0:
+                    idf[word] += 1
+        for word in idf:
+            idf[word] = math.log10(N / float(idf[word]))
+        
+        return idf
+
+    def fit_transform(self, texts):
+        tf_texts = [self.__compute_tf(text) for text in texts]
+        
+        idf = self.__compute_idf(tf_texts)
+        
+        tfidf_matrix = np.zeros((len(texts), len(idf)))
+        
+        for i, tf_text in enumerate(tf_texts):
+            for j, word in enumerate(idf.keys()):
+                tfidf_matrix[i, j] = tf_text.get(word, 0) * idf[word]
+        
+        return tfidf_matrix
+

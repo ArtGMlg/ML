@@ -8,3 +8,5 @@ tensorflow
 importlib
 streamlit
 fs
+numdifftools
+opencv-python
